@@ -1,0 +1,21 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "streamlogia"
+version = "0.1.0"
+description = "Thread-safe Python client for the Log Ingestor service"
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.8"
+dependencies = []
+
+[project.optional-dependencies]
+certifi = ["certifi"]
+
+[tool.hatch.build.targets.wheel]
+include = ["logingestor.py"]
+
+[project.urls]
+Homepage = "https://streamlogia.com"
