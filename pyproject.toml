@@ -19,3 +19,5 @@ include = ["logingestor.py"]
 
 [project.urls]
 Homepage = "https://streamlogia.com"
+Repository = "https://github.com/streamlogia/python-sdk"
+Issues = "https://github.com/streamlogia/python-sdk/issues"
