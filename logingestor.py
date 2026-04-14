@@ -3,24 +3,25 @@ logingestor — Python SDK
 
 Works with Python 3.8+ using only the standard library.
 
-Basic usage::
+Minimal usage (reads LOGINGESTOR_API_KEY and LOGINGESTOR_PROJECT_ID from env)::
 
-    from logingestor import LogIngestorClient
+    import logingestor
+    from fastapi import FastAPI          # or Flask
 
-    client = LogIngestorClient(
-        api_key=os.environ["LOGINGESTOR_API_KEY"],
-        project_id=os.environ["LOGINGESTOR_PROJECT_ID"],
-        source="order-service",
-    )
+    app = FastAPI()
+    client = logingestor.init(app, source="order-service")
 
-    client.info("user signed in", meta={"user_id": "u_123"})
-    client.close()  # flush remaining logs before exit
+    # stdlib logging is now wired to the ingestor automatically.
+    # Use client.info / client.error for direct calls, or just use
+    # logging.getLogger(__name__) — both go to the ingestor.
 """
 
 from __future__ import annotations
 
+import atexit
 import json
 import logging
+import os
 import ssl
 import sys
 import threading
@@ -87,8 +88,8 @@ class LogIngestorClient:
 
     def __init__(
         self,
-        api_key: str,
-        project_id: str,
+        api_key: Optional[str] = None,
+        project_id: Optional[str] = None,
         *,
         source: str = "unknown",
         batch_size: int = 1,
@@ -96,6 +97,16 @@ class LogIngestorClient:
         console: bool = True,
         on_error: Optional[Callable[[Exception], None]] = None,
     ) -> None:
+        api_key = api_key or os.environ.get("LOGINGESTOR_API_KEY")
+        project_id = project_id or os.environ.get("LOGINGESTOR_PROJECT_ID")
+        if not api_key:
+            raise ValueError(
+                "api_key is required. Pass it explicitly or set LOGINGESTOR_API_KEY."
+            )
+        if not project_id:
+            raise ValueError(
+                "project_id is required. Pass it explicitly or set LOGINGESTOR_PROJECT_ID."
+            )
         self._base_url = DEFAULT_BASE_URL.rstrip("/")
         self._api_key = api_key
         self._project_id = project_id
@@ -338,6 +349,74 @@ class _LogIngestorHandler(logging.Handler):
                 traceback.format_exception(*record.exc_info))
 
         self._client._enqueue(level, self.format(record), meta=meta)
+
+
+def init(
+    app: Any = None,
+    *,
+    source: str = "unknown",
+    batch_size: int = 1,
+    flush_interval: float = 5.0,
+    console: bool = True,
+    log_level: int = logging.DEBUG,
+    api_key: Optional[str] = None,
+    project_id: Optional[str] = None,
+    on_error: Optional[Callable[[Exception], None]] = None,
+) -> LogIngestorClient:
+    """
+    One-call setup for Flask and FastAPI/Starlette apps.
+
+    - Reads ``LOGINGESTOR_API_KEY`` and ``LOGINGESTOR_PROJECT_ID`` from the
+      environment (override with *api_key* / *project_id*).
+    - Attaches request-logging middleware to *app* (pass ``None`` to skip).
+    - Routes the stdlib root logger through the ingestor so every
+      ``logging.getLogger(...)`` call is captured automatically.
+    - Registers a shutdown hook to flush buffered logs on exit.
+
+    Returns the :class:`LogIngestorClient` for direct calls (``client.info(...)``)
+    or for passing to other parts of your application.
+
+    Usage::
+
+        # FastAPI
+        app = FastAPI()
+        client = logingestor.init(app, source="order-service")
+
+        # Flask
+        app = Flask(__name__)
+        client = logingestor.init(app, source="payment-service")
+
+        # No framework — just stdlib logging integration
+        client = logingestor.init(source="worker")
+    """
+    client = LogIngestorClient(
+        api_key=api_key,
+        project_id=project_id,
+        source=source,
+        batch_size=batch_size,
+        flush_interval=flush_interval,
+        console=console,
+        on_error=on_error,
+    )
+
+    # Wire stdlib root logger so every logging.getLogger(...) goes to ingestor.
+    root = logging.getLogger()
+    root.setLevel(log_level)
+    root.addHandler(client.logging_handler())
+
+    if app is not None:
+        if hasattr(app, "add_middleware"):
+            # FastAPI / Starlette
+            app.add_middleware(client.asgi_middleware())
+            app.add_event_handler("shutdown", client.close)
+        elif hasattr(app, "before_request"):
+            # Flask
+            client.flask_middleware(app)
+            atexit.register(client.close)
+    else:
+        atexit.register(client.close)
+
+    return client
 
 
 def _level_for_status(status: int) -> str:
