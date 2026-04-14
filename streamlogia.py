@@ -408,7 +408,10 @@ def init(
         if hasattr(app, "add_middleware"):
             # FastAPI / Starlette
             app.add_middleware(client.asgi_middleware())
-            app.add_event_handler("shutdown", client.close)
+            if hasattr(app, "add_event_handler"):
+                app.add_event_handler("shutdown", client.close)
+            else:
+                atexit.register(client.close)
         elif hasattr(app, "before_request"):
             # Flask
             client.flask_middleware(app)
