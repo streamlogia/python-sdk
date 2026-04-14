@@ -2,20 +2,18 @@
 Example Flask app using the Log Ingestor SDK.
 
 Install:  pip install flask
-Run:      LOGINGESTOR_API_KEY=... LOGINGESTOR_PROJECT_ID=... python flask_app.py
+Run:      STREAMLOGIA_API_KEY=... STREAMLOGIA_PROJECT_ID=... python flask_app.py
 """
 
 import logging
 import os
-import sys
 
-import logingestor
 from flask import Flask, jsonify, request
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+import streamlogia
 
 app = Flask(__name__)
-client = logingestor.init(app, source="payment-service", console=True)
+client = streamlogia.init(app, source="payment-service", console=True)
 
 logger = logging.getLogger("payment-service")
 

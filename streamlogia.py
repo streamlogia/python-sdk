@@ -1,15 +1,15 @@
 """
-logingestor — Python SDK
+streamlogia — Python SDK
 
 Works with Python 3.8+ using only the standard library.
 
-Minimal usage (reads LOGINGESTOR_API_KEY and LOGINGESTOR_PROJECT_ID from env)::
+Minimal usage (reads STREAMLOGIA_API_KEY and STREAMLOGIA_PROJECT_ID from env)::
 
-    import logingestor
+    import streamlogia
     from fastapi import FastAPI          # or Flask
 
     app = FastAPI()
-    client = logingestor.init(app, source="order-service")
+    client = streamlogia.init(app, source="order-service")
 
     # stdlib logging is now wired to the ingestor automatically.
     # Use client.info / client.error for direct calls, or just use
@@ -97,15 +97,15 @@ class LogIngestorClient:
         console: bool = True,
         on_error: Optional[Callable[[Exception], None]] = None,
     ) -> None:
-        api_key = api_key or os.environ.get("LOGINGESTOR_API_KEY")
-        project_id = project_id or os.environ.get("LOGINGESTOR_PROJECT_ID")
+        api_key = api_key or os.environ.get("STREAMLOGIA_API_KEY")
+        project_id = project_id or os.environ.get("STREAMLOGIA_PROJECT_ID")
         if not api_key:
             raise ValueError(
-                "api_key is required. Pass it explicitly or set LOGINGESTOR_API_KEY."
+                "api_key is required. Pass it explicitly or set STREAMLOGIA_API_KEY."
             )
         if not project_id:
             raise ValueError(
-                "project_id is required. Pass it explicitly or set LOGINGESTOR_PROJECT_ID."
+                "project_id is required. Pass it explicitly or set STREAMLOGIA_PROJECT_ID."
             )
         self._base_url = DEFAULT_BASE_URL.rstrip("/")
         self._api_key = api_key
@@ -115,7 +115,7 @@ class LogIngestorClient:
         self._flush_interval = flush_interval
         self._console = console
         self._on_error = on_error or (lambda e: print(
-            f"[logingestor] {e}", file=sys.stderr))
+            f"[streamlogia] {e}", file=sys.stderr))
 
         self._queue: list[dict] = []
         self._lock = threading.Lock()
@@ -200,14 +200,14 @@ class LogIngestorClient:
         def _before():
             # pylint: disable=import-outside-toplevel,import-error
             from flask import g  # noqa: PLC0415
-            g.logingestor_start = time.monotonic()
+            g.streamlogia_start = time.monotonic()
 
         @app.after_request
         def _after(response):
             # pylint: disable=import-outside-toplevel,import-error
             from flask import g, request  # noqa: PLC0415
             duration_ms = int(
-                (time.monotonic() - g.logingestor_start) * 1000)
+                (time.monotonic() - g.streamlogia_start) * 1000)
             status = response.status_code
             meta = {
                 "method": request.method,
@@ -366,7 +366,7 @@ def init(
     """
     One-call setup for Flask and FastAPI/Starlette apps.
 
-    - Reads ``LOGINGESTOR_API_KEY`` and ``LOGINGESTOR_PROJECT_ID`` from the
+    - Reads ``STREAMLOGIA_API_KEY`` and ``STREAMLOGIA_PROJECT_ID`` from the
       environment (override with *api_key* / *project_id*).
     - Attaches request-logging middleware to *app* (pass ``None`` to skip).
     - Routes the stdlib root logger through the ingestor so every
@@ -380,14 +380,14 @@ def init(
 
         # FastAPI
         app = FastAPI()
-        client = logingestor.init(app, source="order-service")
+        client = streamlogia.init(app, source="order-service")
 
         # Flask
         app = Flask(__name__)
-        client = logingestor.init(app, source="payment-service")
+        client = streamlogia.init(app, source="payment-service")
 
         # No framework — just stdlib logging integration
-        client = logingestor.init(source="worker")
+        client = streamlogia.init(source="worker")
     """
     client = LogIngestorClient(
         api_key=api_key,

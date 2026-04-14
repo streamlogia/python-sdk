@@ -2,21 +2,19 @@
 Example FastAPI app using the Log Ingestor SDK.
 
 Install:  pip install fastapi uvicorn
-Run:      LOGINGESTOR_API_KEY=... LOGINGESTOR_PROJECT_ID=... uvicorn fastapi_app:app
+Run:      STREAMLOGIA_API_KEY=... STREAMLOGIA_PROJECT_ID=... uvicorn fastapi_app:app
 """
 
+import streamlogia
 import logging
 import os
-import sys
 
-import logingestor
 from fastapi import FastAPI
 from pydantic import BaseModel
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 app = FastAPI()
-client = logingestor.init(app, source="order-service", console=True)
+client = streamlogia.init(app, source="order-service", console=True)
 
 logger = logging.getLogger("order-service")
 
