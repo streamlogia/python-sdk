@@ -145,6 +145,10 @@ class LogIngestorClient:
         self._lock = threading.Lock()
         self._stop_event = threading.Event()
 
+        # Sends started by _enqueue run on their own threads; close() waits for
+        # them, or a short-lived process exits with its last entries unsent.
+        self._inflight: set[threading.Thread] = set()
+
         self._timer_thread = threading.Thread(
             target=self._background_flusher, daemon=True)
         self._timer_thread.start()
@@ -202,10 +206,15 @@ class LogIngestorClient:
             self._on_error(exc)
 
     def close(self) -> None:
-        """Flush pending logs and stop the background thread."""
+        """Flush pending logs, wait for in-flight sends, stop the background thread."""
         self._stop_event.set()
         self._timer_thread.join(timeout=self._flush_interval + 2)
         self.flush()
+
+        with self._lock:
+            pending = list(self._inflight)
+        for t in pending:
+            t.join(timeout=15)
 
     # ── Flask integration ─────────────────────────────────────────────────────
 
@@ -344,7 +353,21 @@ class LogIngestorClient:
             should_flush = len(self._queue) >= self._batch_size
 
         if should_flush:
-            threading.Thread(target=self.flush, daemon=True).start()
+            self._start_flush()
+
+    def _start_flush(self) -> None:
+        """Flush on a tracked thread so close() can wait for it."""
+        def run() -> None:
+            try:
+                self.flush()
+            finally:
+                with self._lock:
+                    self._inflight.discard(t)
+
+        t = threading.Thread(target=run, daemon=True)
+        with self._lock:
+            self._inflight.add(t)
+        t.start()
 
     def _background_flusher(self) -> None:
         while not self._stop_event.wait(timeout=self._flush_interval):
