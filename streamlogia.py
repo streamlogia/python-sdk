@@ -34,14 +34,33 @@ from typing import Any, Callable, Optional
 
 DEFAULT_BASE_URL = "https://api.streamlogia.com"
 
+# A self-hosted installation sets these once in the environment instead of
+# passing base_url / ca_file to every client.
+ENV_BASE_URL = "STREAMLOGIA_API_URL"
+ENV_CA_FILE = "STREAMLOGIA_CA_FILE"
 
-def _ssl_context() -> ssl.SSLContext:
-    """Return an SSL context using certifi's CA bundle if available, else default."""
+
+def _ssl_context(ca_file: Optional[str] = None) -> ssl.SSLContext:
+    """
+    Return the SSL context requests are made with.
+
+    With *ca_file* (or STREAMLOGIA_CA_FILE), that bundle alone is trusted: it
+    is how a self-hosted installation behind a private CA is reached. Otherwise
+    the system trust store is used, with certifi's bundle added when installed,
+    so a corporate CA installed on the host is honoured and the public roots
+    are still there on a bare container.
+    """
+    ca_file = ca_file or os.environ.get(ENV_CA_FILE)
+    if ca_file:
+        return ssl.create_default_context(cafile=ca_file)
+
+    ctx = ssl.create_default_context()
     try:
         import certifi  # noqa: PLC0415
-        return ssl.create_default_context(cafile=certifi.where())
-    except ImportError:
-        return ssl.create_default_context()
+        ctx.load_verify_locations(cafile=certifi.where())
+    except (ImportError, ssl.SSLError, OSError):
+        pass
+    return ctx
 
 
 class Level:  # pylint: disable=too-few-public-methods
@@ -96,9 +115,12 @@ class LogIngestorClient:
         flush_interval: float = 5.0,
         console: bool = True,
         on_error: Optional[Callable[[Exception], None]] = None,
+        base_url: Optional[str] = None,
+        ca_file: Optional[str] = None,
     ) -> None:
         api_key = api_key or os.environ.get("STREAMLOGIA_API_KEY")
         project_id = project_id or os.environ.get("STREAMLOGIA_PROJECT_ID")
+        base_url = base_url or os.environ.get(ENV_BASE_URL) or DEFAULT_BASE_URL
         if not api_key:
             raise ValueError(
                 "api_key is required. Pass it explicitly or set STREAMLOGIA_API_KEY."
@@ -107,7 +129,9 @@ class LogIngestorClient:
             raise ValueError(
                 "project_id is required. Pass it explicitly or set STREAMLOGIA_PROJECT_ID."
             )
-        self._base_url = DEFAULT_BASE_URL.rstrip("/")
+        self._base_url = base_url.strip().rstrip("/")
+        self._ca_file = ca_file
+        self._ssl = _ssl_context(ca_file)
         self._api_key = api_key
         self._project_id = project_id
         self._source = source
@@ -161,7 +185,7 @@ class LogIngestorClient:
             },
             method="POST",
         )
-        with urllib.request.urlopen(req, timeout=10, context=_ssl_context()) as resp:
+        with urllib.request.urlopen(req, timeout=10, context=self._ssl) as resp:
             return json.loads(resp.read())
 
     def flush(self) -> None:
@@ -362,12 +386,16 @@ def init(
     api_key: Optional[str] = None,
     project_id: Optional[str] = None,
     on_error: Optional[Callable[[Exception], None]] = None,
+    base_url: Optional[str] = None,
+    ca_file: Optional[str] = None,
 ) -> LogIngestorClient:
     """
     One-call setup for Flask and FastAPI/Starlette apps.
 
     - Reads ``STREAMLOGIA_API_KEY`` and ``STREAMLOGIA_PROJECT_ID`` from the
-      environment (override with *api_key* / *project_id*).
+      environment (override with *api_key* / *project_id*), and
+      ``STREAMLOGIA_API_URL`` / ``STREAMLOGIA_CA_FILE`` for a self-hosted
+      installation (override with *base_url* / *ca_file*).
     - Attaches request-logging middleware to *app* (pass ``None`` to skip).
     - Routes the stdlib root logger through the ingestor so every
       ``logging.getLogger(...)`` call is captured automatically.
@@ -392,6 +420,8 @@ def init(
     client = LogIngestorClient(
         api_key=api_key,
         project_id=project_id,
+        base_url=base_url,
+        ca_file=ca_file,
         source=source,
         batch_size=batch_size,
         flush_interval=flush_interval,

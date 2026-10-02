@@ -62,6 +62,8 @@ client.info("order created", meta={"order_id": "o_1"})          # also goes to i
 | `console`        | `bool`     | `True`           | Mirror logs to stdout/stderr in addition to the ingestor        |
 | `log_level`      | `int`      | `logging.DEBUG`  | Minimum stdlib log level forwarded to the ingestor              |
 | `on_error`       | `callable` | prints to stderr | Called with the exception when an ingest request fails          |
+| `base_url`       | `str`      | env var          | Override `STREAMLOGIA_API_URL`; a self-hosted Streamlogia API   |
+| `ca_file`        | `str`      | env var          | Override `STREAMLOGIA_CA_FILE`; a private CA bundle to trust    |
 
 ## Logging methods
 
@@ -207,3 +209,18 @@ export LOGINGESTOR_PROJECT_ID=your-project-id
 export STREAMLOGIA_API_KEY=your-api-key
 export STREAMLOGIA_PROJECT_ID=your-project-id
 ```
+
+## Self-hosted Streamlogia
+
+The SDK sends to the hosted service unless told otherwise. For an installation
+on your own network, set the base URL once in the environment:
+
+```bash
+export STREAMLOGIA_API_URL=https://logs-api.corp.example
+# only if the installation's certificate is from a private CA:
+export STREAMLOGIA_CA_FILE=/etc/ssl/corp-ca.pem
+```
+
+or pass `base_url=` and `ca_file=` to `init()` or `LogIngestorClient(...)`.
+The key is an **ingest key** (`ls_app_live_…`) from the dashboard's API Keys
+page, not your login token: login tokens expire with the session.
